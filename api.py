@@ -45,8 +45,10 @@ async def show_customers():
 @app.get("/restaurants/name/{restaurant_name}", status_code = status.HTTP_200_OK)
 async def restaurant_by_name(restaurant_name: str):
     data = []
-    restaurants_list = restaurants_collection.find({"Name": restaurant_name})
+    restaurants_list = restaurants_collection.find({"Name": {'$regex': restaurant_name, '$options': 'i'}})
     for restaurant in restaurants_list:
+
+
         restaurant["_id"] = str(restaurant["_id"])
         data.append(restaurant)
     return data
@@ -226,7 +228,7 @@ def get_nearby_restaurants(location, types, point_location):
             {'coordinates':
                  {'$near':
                       {'$geometry': point_location,
-                       '$maxDistance': 3000  # max distance in meters
+                       '$maxDistance': 5000  # max distance in meters
                        }
                   }
              }

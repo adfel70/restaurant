@@ -1,5 +1,12 @@
-import time
+import random
+from pymongo import MongoClient
 
+
+client = MongoClient("mongodb://localhost:27017/")
+db = client["project1"]
+restaurants_collection = db["Restaurants"]
+people_collection = db["people"]
+restaurants_collection.create_index([("coordinates", "2dsphere")])
 
 new_customers = [
     {
@@ -64,7 +71,42 @@ new_customers = [
     }
 ]
 
+first_names = [
+    "Olivia", "Ethan", "Ava", "Benjamin", "Amelia", "Liam", "Charlotte",
+    "Noah", "Isabella", "Lucas", "Mia", "Alexander", "Sophia", "William",
+    "Harper", "James", "Evelyn", "Michael", "Abigail", "Henry", "Emily",
+    "Daniel", "Elizabeth", "Jack", "Scarlett", "Samuel", "Grace", "Oliver",
+    "Lily", "Joseph"
+]
 
-# for customer in new_customers:
-#     time.sleep(0.5)
-#     print(customer)
+last_names = [
+    "Smith", "Johnson", "Williams", "Brown", "Jones", "Miller", "Davis",
+    "Garcia", "Rodriguez", "Wilson", "Martinez", "Anderson", "Taylor",
+    "Thomas", "Hernandez", "Moore", "Martin", "Jackson", "Thompson", "White",
+    "Harris", "Clark", "Lewis", "Young", "Lee", "Walker", "Hall", "Allen",
+    "King", "Scott"
+]
+
+
+while len(new_customers) < 20:  # Specify the number of customers you want to generate
+    first_name = random.choice(first_names)
+    last_name = random.choice(last_names)
+    full_name = f"{first_name} {last_name}"
+    score = random.randint(2, 5)
+    restaurant = restaurants_collection.aggregate([
+        {"$sample": {"size": 1}},
+        {"$project": {"_id": 0, "Name": 1, "Street Address": 1}}
+    ])
+    for document in restaurant:
+        restaurant_name = document["Name"]
+        address = document["Street Address"]
+        new_customers.append({
+            "name": full_name,
+            "restaurant_visited": restaurant_name,
+            "address": address,
+            "score": float(score)
+        })
+
+
+
+

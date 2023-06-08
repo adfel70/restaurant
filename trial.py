@@ -65,6 +65,8 @@
 #     channel.stop_consuming()
 #
 # connection.close()
+import queue
+import threading
 
 # from geopy.geocoders import Nominatim
 # geolocator = Nominatim(user_agent="hello")
@@ -74,7 +76,7 @@
 #
 from geopy.geocoders import Bing
 
-#Create a geocoder object using Bing
+# Create a geocoder object using Bing
 # geolocator = Bing(api_key='AhpwrCFQAHjj_6XelmahpGUxECXe1tonsrdoV2zAc9VJETqAj-6ekcmoMaKv5Ri6')
 #
 # street = "0"
@@ -94,13 +96,13 @@ from geopy.geocoders import Bing
 from fastapi import FastAPI, Path, Query, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Optional
-from pymongo import MongoClient
-#
-# # Connect to MongoDB
-client = MongoClient("mongodb://localhost:27017/")
-db = client["project1"]
-restaurants_collection = db["Restaurants"]
-people_collection = db["people"]
+# from pymongo import MongoClient
+# #
+# # # Connect to MongoDB
+# client = MongoClient("mongodb://localhost:27017/")
+# db = client["project1"]
+# restaurants_collection = db["Restaurants"]
+# people_collection = db["people"]
 # restaurants_list = restaurants_collection.find({"Location": {'$regex': 'NY', "$options": "i"}})
 # restaurants = restaurants_list
 # for restaurant in restaurants:
@@ -147,31 +149,26 @@ people_collection = db["people"]
 
 # import sys
 # print(sys.prefix)
-visited_restaurants = []
-persons = people_collection.find({"name": {'$regex': 'Tom Hanks', '$options': 'i'}})
-for person in persons:
-    for visit in person.get('restaurant_visited', []):
-        visited_restaurants.append(visit['restaurant'])
-print(visited_restaurants)
-
-types_list = []
-for restaurant in visited_restaurants:
-    query = restaurants_collection.find({"Name": {'$regex': restaurant, '$options': 'i'}})
-    for rest in query:
-        types = rest['Type'].split(', ')
-        types_list.extend(types)
-print(list(set(types_list)))
-
-new_query = restaurants_collection.find({'Location': {'$regex': location, '$options': 'i'},
-                                                 'Type': {'$regex': rest_type, '$options': 'i'},
-                                                 'Reviews': {'$gte': 4}})
-print(f"{obj['Street Address']}, {obj['Location']}")
-
-
-
-
-
-
+# visited_restaurants = []
+# persons = people_collection.find({"name": {'$regex': 'Tom Hanks', '$options': 'i'}})
+# for person in persons:
+#     for visit in person.get('restaurant_visited', []):
+#         visited_restaurants.append(visit['restaurant'])
+# print(visited_restaurants)
+#
+# types_list = []
+# for restaurant in visited_restaurants:
+#     query = restaurants_collection.find({"Name": {'$regex': restaurant, '$options': 'i'}})
+#     for rest in query:
+#         types = rest['Type'].split(', ')
+#         types_list.extend(types)
+# print(list(set(types_list)))
+#
+# new_query = restaurants_collection.find({'Location': {'$regex': location, '$options': 'i'},
+#                                                  'Type': {'$regex': rest_type, '$options': 'i'},
+#                                                  'Reviews': {'$gte': 4}})
+# print(f"{obj['Street Address']}, {obj['Location']}")
+#
 
 
 # def find_matching_restaurants(location, rest_type):
@@ -210,3 +207,159 @@ print(f"{obj['Street Address']}, {obj['Location']}")
 #                     seen_ids.add(str(nearby_restaurant["_id"]))
 #
 #     return data
+
+
+#
+# random_names = restaurants_collection.aggregate([
+#     { "$sample": { "size": 1 } },
+#     { "$project": { "_id": 0, "Name": 1 } }
+# ])
+#
+# for document in random_names:
+#     restaurant_name = document["Name"]
+#     print(restaurant_name)
+#
+#     # Find the restaurant document by name
+#     restaurant_document = restaurants_collection.find({'Name': restaurant_name})
+#
+#     for rest in restaurant_document:
+#         address = str(rest['Street Address'])
+#         print(address)
+#
+
+import queue
+import threading
+import random
+from pymongo import MongoClient
+import pika
+from customers import new_customers
+import time
+
+client = MongoClient("mongodb://localhost:27017/")
+db = client["project1"]
+restaurants_collection = db["Restaurants"]
+people_collection = db["people"]
+restaurants_collection.create_index([("coordinates", "2dsphere")])
+
+# new_customers = [
+#     {
+#         "name": "Tom Hanks",
+#         "restaurant_visited": "Coach House Diner",
+#         "address": "55 State Rt 4",
+#         "score": 4.5
+#     },
+#     {
+#         "name": "Will Smith",
+#         "restaurant_visited": "John Thomas Steakhouse",
+#         "address": "1152 Danby Rd",
+#         "score": 3.8
+#     },
+#     {
+#         "name": "Leonardo DiCaprio",
+#         "restaurant_visited": "Revolve True Food & Wine Bar",
+#         "address": "10024 Main St",
+#         "score": 4.2
+#     },
+#     {
+#         "name": "Brad Pitt",
+#         "restaurant_visited": "Social 37",
+#         "address": "2 Route 37 W Unit B2",
+#         "score": 4
+#     },
+#     {
+#         "name": "Scarlett Johansson",
+#         "restaurant_visited": "Magic Castle",
+#         "address": "7001 Franklin Ave",
+#         "score": 5
+#     },
+#     {
+#         "name": "Johnny Depp",
+#         "restaurant_visited": "The Cheesecake Factory",
+#         "address": "401 Bellevue Sq",
+#         "score": 4.5
+#     },
+#     {
+#         "name": "George Clooney",
+#         "restaurant_visited": "Off Vine",
+#         "address": "6263 Leland Way",
+#         "score": 4.6
+#     },
+#     {
+#         "name": "Scarlett Johansson",
+#         "restaurant_visited": "Elements Restaurant",
+#         "address": "907 Main Street",
+#         "score": 4
+#     },
+#     {
+#         "name": "Johnny Depp",
+#         "restaurant_visited": "Henry Street Taproom",
+#         "address": "86 Henry St",
+#         "score": 3.5
+#     },
+#     {
+#         "name": "just a test",
+#         "restaurant_visited": "test test test",
+#         "address": "somewhere",
+#         "score": 5
+#     }
+# ]
+#
+first_names = [
+    "Olivia", "Ethan", "Ava", "Benjamin", "Amelia", "Liam", "Charlotte",
+    "Noah", "Isabella", "Lucas", "Mia", "Alexander", "Sophia", "William",
+    "Harper", "James", "Evelyn", "Michael", "Abigail", "Henry", "Emily",
+    "Daniel", "Elizabeth", "Jack", "Scarlett", "Samuel", "Grace", "Oliver",
+    "Lily", "Joseph"
+]
+
+last_names = [
+    "Smith", "Johnson", "Williams", "Brown", "Jones", "Miller", "Davis",
+    "Garcia", "Rodriguez", "Wilson", "Martinez", "Anderson", "Taylor",
+    "Thomas", "Hernandez", "Moore", "Martin", "Jackson", "Thompson", "White",
+    "Harris", "Clark", "Lewis", "Young", "Lee", "Walker", "Hall", "Allen",
+    "King", "Scott"
+]
+
+new_customers = queue.Queue()
+
+
+def generate_customers():
+    while True:  # change to a condition suitable to your context
+        first_name = random.choice(first_names)
+        last_name = random.choice(last_names)
+        full_name = f"{first_name} {last_name}"
+        score = random.randint(2, 5)
+        restaurant = restaurants_collection.aggregate([
+            {"$sample": {"size": 1}},
+            {"$project": {"_id": 0, "Name": 1, "Street Address": 1}}
+        ])
+        for document in restaurant:
+            restaurant_name = document["Name"]
+            address = document["Street Address"]
+            new_customers.put({
+                "name": full_name,
+                "restaurant_visited": restaurant_name,
+                "address": address,
+                "score": float(score)
+            })
+
+
+def publish_messages():
+    connection = pika.BlockingConnection(pika.ConnectionParameters("localhost"))
+    channel = connection.channel()
+    channel.exchange_declare(exchange = "my_exchange", exchange_type = "direct")
+
+    while True:  # change to a condition suitable to your context
+        customer = new_customers.get()  # This will block and wait until there's something in new_customers
+        time.sleep(2)
+        message = f"{customer['name']} visited {customer['restaurant_visited']} at {customer['address']} and gave a score of {customer['score']}"
+        print(message)
+        channel.basic_publish(exchange = "my_exchange", routing_key = "", body = message)
+
+    # Close the connection
+    connection.close()
+
+
+# Run both functions in separate threads
+threading.Thread(target = generate_customers).start()
+threading.Thread(target = publish_messages).start()
