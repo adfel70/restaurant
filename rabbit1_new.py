@@ -3,7 +3,7 @@ import threading
 import random
 from pymongo import MongoClient
 import pika
-from customers import new_customers
+# from customers import new_customers
 import time
 
 client = MongoClient("mongodb://localhost:27017/")
@@ -57,17 +57,15 @@ def publish_messages():
     channel = connection.channel()
     channel.exchange_declare(exchange = "my_exchange", exchange_type = "direct")
 
-    while True:  # change to a condition suitable to your context
-        customer = new_customers.get()  # This will block and wait until there's something in new_customers
+    while True:
+        customer = new_customers.get()
         time.sleep(2)
         message = f"{customer['name']} visited {customer['restaurant_visited']} at {customer['address']} and gave a score of {customer['score']}"
         print(message)
         channel.basic_publish(exchange = "my_exchange", routing_key = "", body = message)
 
-    # Close the connection
     connection.close()
 
 
-# Run both functions in separate threads
 threading.Thread(target = generate_customers).start()
 threading.Thread(target = publish_messages).start()
