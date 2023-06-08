@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Optional
 from pymongo import MongoClient
-from customers import new_customers
+from rabbit1_new import new_customers
 import os
 from geopy import Bing
 from dotenv import load_dotenv
@@ -35,11 +35,6 @@ async def show_people():
         person["_id"] = str(person["_id"])
         data.append(person)
     return {"data": data}
-
-
-@app.get("/customers")
-async def show_customers():
-    return new_customers
 
 
 @app.get("/restaurants/name/{restaurant_name}", status_code = status.HTTP_200_OK)
@@ -112,7 +107,7 @@ async def create_customers(new_customer: NewCustomer):
                                   address = new_customer.address,
                                   score = new_customer.score)
 
-    new_customers.append(customer_to_add)
+    new_customers.get(customer_to_add)
 
 
 class UpdateRestaurantDetails(BaseModel):
