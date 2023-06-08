@@ -2,7 +2,6 @@ from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Optional
 from pymongo import MongoClient
-from rabbit1_new import new_customers
 import os
 from geopy import Bing
 from dotenv import load_dotenv
@@ -42,7 +41,6 @@ async def restaurant_by_name(restaurant_name: str):
     data = []
     restaurants_list = restaurants_collection.find({"Name": {'$regex': restaurant_name, '$options': 'i'}})
     for restaurant in restaurants_list:
-
 
         restaurant["_id"] = str(restaurant["_id"])
         data.append(restaurant)
@@ -93,21 +91,21 @@ async def create_restaurant(new_restaurant: NewRestaurant):
     restaurants_collection.insert_one(restaurant_to_add.dict())
 
 
-class NewCustomer(BaseModel):
-    name: str
-    restaurant_visited: str
-    address: str
-    score: float
+# class NewCustomer(BaseModel):
+#     name: str
+#     restaurant_visited: str
+#     address: str
+#     score: float
 
 
-@app.post("/customers/create_customer")
-async def create_customers(new_customer: NewCustomer):
-    customer_to_add = NewCustomer(name = new_customer.name,
-                                  restaurant_visited = new_customer.restaurant_visited,
-                                  address = new_customer.address,
-                                  score = new_customer.score)
-
-    new_customers.get(customer_to_add)
+# @app.post("/customers/create_customer")
+# async def create_customers(new_customer: NewCustomer):
+#     customer_to_add = NewCustomer(name = new_customer.name,
+#                                   restaurant_visited = new_customer.restaurant_visited,
+#                                   address = new_customer.address,
+#                                   score = new_customer.score)
+#
+#     new_customers.put(customer_to_add)
 
 
 class UpdateRestaurantDetails(BaseModel):
