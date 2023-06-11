@@ -5,6 +5,8 @@ from pymongo import MongoClient
 import os
 from geopy import Bing
 from dotenv import load_dotenv
+import pandas as pd
+import numpy as np
 
 # Connect to MongoDB
 client = MongoClient("mongodb://localhost:27017/")
@@ -14,16 +16,6 @@ people_collection = db["people"]
 restaurants_collection.create_index([("coordinates", "2dsphere")])
 
 app = FastAPI()
-
-
-@app.get("/restaurants")
-async def show_restaurants():
-    data = []
-    restaurants = restaurants_collection.find({})
-    for rest in restaurants:
-        rest["_id"] = str(rest["_id"])
-        data.append(rest)
-    return {"data": data}
 
 
 @app.get("/people")
@@ -36,32 +28,17 @@ async def show_people():
     return {"data": data}
 
 
-@app.get("/restaurants/name/{restaurant_name}", status_code = status.HTTP_200_OK)
-async def restaurant_by_name(restaurant_name: str):
+@app.get("/restaurants")
+async def show_restaurants(name: Optional[str] = None, state: Optional[str] = None, min_score: Optional[float] = None):
     data = []
-    restaurants_list = restaurants_collection.find({"Name": {'$regex': restaurant_name, '$options': 'i'}})
-    for restaurant in restaurants_list:
-
-        restaurant["_id"] = str(restaurant["_id"])
-        data.append(restaurant)
-    return data
-
-
-@app.get("/restaurant/state/{state}")
-async def show_restaurants_by_state(state):
-    data = []
-    new_state = str(state)
-    restaurants = restaurants_collection.find({"Location": {'$regex': new_state, "$options": "i"}})
-    for rest in restaurants:
-        rest["_id"] = str(rest["_id"])
-        data.append(rest)
-    return data
-
-
-@app.get("/restaurant/score/{min_score}")
-async def show_restaurants_by_score(min_score: float):
-    data = []
-    restaurants = restaurants_collection.find({"Reviews": {'$gte': min_score}})
+    query = {}
+    if name:
+        query["Name"] = {'$regex': name, "$options": "i"}
+    if state:
+        query["Location"] = {'$regex': state, "$options": "i"}
+    if min_score is not None:
+        query["Reviews"] = {'$gte': min_score}
+    restaurants = restaurants_collection.find(query)
     for rest in restaurants:
         rest["_id"] = str(rest["_id"])
         data.append(rest)
@@ -91,23 +68,6 @@ async def create_restaurant(new_restaurant: NewRestaurant):
     restaurants_collection.insert_one(restaurant_to_add.dict())
 
 
-# class NewCustomer(BaseModel):
-#     name: str
-#     restaurant_visited: str
-#     address: str
-#     score: float
-
-
-# @app.post("/customers/create_customer")
-# async def create_customers(new_customer: NewCustomer):
-#     customer_to_add = NewCustomer(name = new_customer.name,
-#                                   restaurant_visited = new_customer.restaurant_visited,
-#                                   address = new_customer.address,
-#                                   score = new_customer.score)
-#
-#     new_customers.put(customer_to_add)
-
-
 class UpdateRestaurantDetails(BaseModel):
     Name: Optional[str] = Field(None)
     Street_Address: Optional[str] = Field(None)
@@ -117,9 +77,9 @@ class UpdateRestaurantDetails(BaseModel):
     Contact_Number: Optional[str] = Field(None)
 
 
-@app.put("/restaurant/update/{restaurant_name}/{address}")
+@app.put("/restaurant/update_restaurant")
 async def update_restaurant_details(restaurant_name: str, address: str, restaurant_details: UpdateRestaurantDetails):
-    query = {"Name": restaurant_name, 'Street Address': address}
+    query = {"Name": {'$regex': restaurant_name, '$options': 'i'}, 'Street Address': address}
     new_values = {"$set": {}}
     if restaurant_details.Name is not None:
         new_values["$set"]["Name"] = restaurant_details.Name
@@ -142,9 +102,12 @@ async def update_restaurant_details(restaurant_name: str, address: str, restaura
         raise HTTPException(status_code = 404, detail = f"Restaurant '{restaurant_name}' not found.")
 
 
-@app.delete("/restaurant/delete/{restaurant_name}/{address}", status_code = status.HTTP_204_NO_CONTENT)
-async def delete_restaurant(restaurant_name: str, address: str):
-    response = restaurants_collection.delete_one({'Name': restaurant_name, 'Street Address': address})
+@app.delete("/restaurant/delete_restaurant", status_code = status.HTTP_204_NO_CONTENT)
+async def delete_restaurant(restaurant_name: str, address: Optional[str] = None):
+    if address:
+        response = restaurants_collection.delete_one({'Name': restaurant_name, 'Street Address': address})
+    else:
+        response = restaurants_collection.delete_many({'Name': restaurant_name})
     if response.deleted_count:
         return {"message": f"Restaurant {restaurant_name} at {address} deleted."}
     else:
@@ -162,11 +125,13 @@ async def recommend_restaurant(full_name: str, state: str, city: str, street=Opt
     my_point_location = get_geo_coordinates(location)
     persons_visited_restaurants = get_visited_restaurants(full_name)
 
-    if not persons_visited_restaurants:
+    if persons_visited_restaurants.empty:
         raise HTTPException(status_code = 404, detail = 'There is no such person. You should create customer first')
 
-    unique_types = get_unique_types(persons_visited_restaurants)
-    nearby_restaurants = get_nearby_restaurants(f"{city}, {state}", unique_types, my_point_location)
+    types_scores_df = get_visited_types_df(persons_visited_restaurants)
+    weighted_df = weighted_scores_df(types_scores_df)
+    set_scored_restaurants(f"{city}, {state}", weighted_df)
+    nearby_restaurants = get_nearby_restaurants(f"{city}, {state}", persons_visited_restaurants, my_point_location)
 
     for restaurant in nearby_restaurants:
         restaurant['_id'] = str(restaurant['_id'])
@@ -188,48 +153,84 @@ def get_geo_coordinates(location):
 
 def get_visited_restaurants(full_name):
     visited_restaurants = []
+    score = []
     persons = people_collection.find({"name": {'$regex': full_name, '$options': 'i'}})
     for person in persons:
         for visit in person.get('restaurant_visited', []):
             visited_restaurants.append(visit['restaurant'])
-    return visited_restaurants
+            score.append(visit['score'])
+    new_df = pd.DataFrame({'restaurant': visited_restaurants, 'score': score})
+    return new_df
 
 
-def get_unique_types(restaurants):
-    types_list = []
-    for restaurant in restaurants:
+def get_visited_types_df(restaurants_df):
+    type_data = []
+    for index, row in restaurants_df.iterrows():
+        restaurant = row['restaurant']
+        score = row['score']
         query = restaurants_collection.find({"Name": {'$regex': restaurant, '$options': 'i'}})
         for rest in query:
             types = rest['Type'].split(', ')
-            types_list.extend(types)
-    return list(set(types_list))
+            for t in types:
+                new_data = {'type': t, 'score': score}
+                type_data.append(new_data)
+    type_df = pd.DataFrame(type_data)
+    return type_df
 
 
-def get_nearby_restaurants(location, types, point_location):
+def weighted_scores_df(type_df):
+    grouped = type_df.groupby('type').agg({'score': ['sum', 'count']}).reset_index()
+    grouped.columns = ['type', 'sum_score', 'num_times']
+    grouped['new_score'] = grouped['sum_score'] / grouped['num_times']
+    grouped['num_times'] = grouped['num_times'].astype(int)
+    average_score = type_df['score'].mean()
+    new_row = pd.DataFrame({'type': ['default'], 'new_score': [average_score], 'num_times': [1]})
+    grouped = pd.concat([grouped, new_row], ignore_index=True)
+    grouped['weighted_score'] = grouped['new_score'] * grouped['num_times']
+    grouped['log_weighted_score'] = np.log(grouped['weighted_score'])
+    return grouped
+
+
+def set_scored_restaurants(location, dataframe):
+    query = restaurants_collection.find({'Location': {'$regex': location, '$options': 'i'},
+                                         'Reviews': {'$gte': 4}})
+    for rest in query:
+        restaurant_score = 0
+        types = rest['Type'].split(', ')
+        for t in types:
+            if dataframe['type'].isin([t]).any():
+                restaurant_score += dataframe.loc[dataframe['type'] == t, 'log_weighted_score'].values[0]
+            else:
+                restaurant_score += dataframe.loc[dataframe['type'] == 'default', 'log_weighted_score'].values[0]
+        restaurants_collection.update_one({'_id': rest['_id']}, {'$set': {'Score': restaurant_score}})
+
+
+def get_nearby_restaurants(location, type_df, point_location):
     data = []
     seen_ids = set()
-    for rest_type in types:
-        new_query = restaurants_collection.find({'Location': {'$regex': location, '$options': 'i'},
-                                                 'Type': {'$regex': rest_type, '$options': 'i'},
-                                                 'Reviews': {'$gte': 4}})
-        for obj in new_query:
-            coordinates = get_geo_coordinates(f"{obj['Street Address']}, {obj['Location']}")
-            if coordinates is not None:
-                restaurants_collection.update_one({'_id': obj['_id']}, {'$set': {'coordinates': coordinates}})
+    average_score = type_df['score'].mean()
+    limited_rec = 3*np.log(average_score)
+    new_query = restaurants_collection.find({'Location': {'$regex': location, '$options': 'i'},
+                                             'Reviews': {'$gte': 4},
+                                             'Score': {'$gte': limited_rec}})
+    for obj in new_query:
+        coordinates = get_geo_coordinates(f"{obj['Street Address']}, {obj['Location']}")
+        if coordinates is not None:
+            restaurants_collection.update_one({'_id': obj['_id']}, {'$set': {'coordinates': coordinates}})
 
-        nearby_restaurants = restaurants_collection.find(
-            {'coordinates':
-                 {'$near':
-                      {'$geometry': point_location,
-                       '$maxDistance': 5000  # max distance in meters
-                       }
-                  }
-             }
-        )
-        for restaurant in nearby_restaurants:
-            if str(restaurant["_id"]) not in seen_ids:
-                data.append(restaurant)
-                seen_ids.add(str(restaurant["_id"]))
-    return data
+    nearby_restaurants = restaurants_collection.find(
+        {'coordinates':
+             {'$near':
+                  {'$geometry': point_location,
+                   '$maxDistance': 3000  # max distance in meters
+                   }
+              }
+         }
+    )
+    for restaurant in nearby_restaurants:
+        if str(restaurant["_id"]) not in seen_ids:
+            data.append(restaurant)
+            seen_ids.add(str(restaurant["_id"]))
 
-
+    sorted_data = sorted(data, key = lambda x: x['Score'], reverse = True)
+    return sorted_data

@@ -14,18 +14,12 @@ restaurants_collection.create_index([("coordinates", "2dsphere")])
 
 first_names = [
     "Olivia", "Ethan", "Ava", "Benjamin", "Amelia", "Liam", "Charlotte",
-    "Noah", "Isabella", "Lucas", "Mia", "Alexander", "Sophia", "William",
-    "Harper", "James", "Evelyn", "Michael", "Abigail", "Henry", "Emily",
-    "Daniel", "Elizabeth", "Jack", "Scarlett", "Samuel", "Grace", "Oliver",
-    "Lily", "Joseph"
+    "Noah", "Isabella", "Lucas"
 ]
 
 last_names = [
     "Smith", "Johnson", "Williams", "Brown", "Jones", "Miller", "Davis",
-    "Garcia", "Rodriguez", "Wilson", "Martinez", "Anderson", "Taylor",
-    "Thomas", "Hernandez", "Moore", "Martin", "Jackson", "Thompson", "White",
-    "Harris", "Clark", "Lewis", "Young", "Lee", "Walker", "Hall", "Allen",
-    "King", "Scott"
+    "Garcia", "Rodriguez", "Wilson"
 ]
 
 new_customers = queue.Queue()
