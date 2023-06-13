@@ -1,42 +1,21 @@
-from fastapi import FastAPI, HTTPException, status
-from pydantic import BaseModel, Field
-from typing import Optional
 from pymongo import MongoClient
 import os
 from geopy import Bing
 from dotenv import load_dotenv
 import pandas as pd
 import numpy as np
+from collections import defaultdict
 
-# Connect to MongoDB
 client = MongoClient("mongodb://localhost:27017/")
 db = client["project1"]
 restaurants_collection = db["Restaurants"]
 people_collection = db["people"]
 restaurants_collection.create_index([("coordinates", "2dsphere")])
 
+
 load_dotenv()  # take environment variables from .env.
 API_KEY = os.getenv('BING_API_KEY')
 geolocator = Bing(api_key = 'AhpwrCFQAHjj_6XelmahpGUxECXe1tonsrdoV2zAc9VJETqAj-6ekcmoMaKv5Ri6', timeout = 10)
-
-
-def recommend_restaurant(full_name: str, state: str, city: str, street=Optional[str]):
-    location = get_location(street, city, state)
-    my_point_location = get_geo_coordinates(location)
-    persons_visited_restaurants = get_visited_restaurants(full_name)
-
-    if persons_visited_restaurants.empty:
-        raise HTTPException(status_code = 404, detail = 'There is no such person. You should create customer first')
-
-    types_scores_df = get_visited_types_df(persons_visited_restaurants)
-    weighted_df = weighted_scores_df(types_scores_df)
-    set_scored_restaurants(f"{city}, {state}", weighted_df)
-    nearby_restaurants = get_nearby_restaurants(f"{city}, {state}", persons_visited_restaurants, my_point_location)
-
-    for restaurant in nearby_restaurants:
-        restaurant['_id'] = str(restaurant['_id'])
-
-    return nearby_restaurants
 
 
 def get_location(street, city, state):
@@ -91,17 +70,18 @@ def weighted_scores_df(type_df):
     return grouped
 
 
-def set_scored_restaurants(location, dataframe):
+def set_scored_restaurants(location, dataframe): # todo default dict
+    default_dict = defaultdict(
+        lambda: dataframe.loc[dataframe['type'] == 'default', 'log_weighted_score'].values[0],
+        {row.type: row.log_weighted_score for row in dataframe.itertuples()}
+    )
     query = restaurants_collection.find({'Location': {'$regex': location, '$options': 'i'},
                                          'Reviews': {'$gte': 4}})
     for rest in query:
         restaurant_score = 0
         types = rest['Type'].split(', ')
         for t in types:
-            if dataframe['type'].isin([t]).any():
-                restaurant_score += dataframe.loc[dataframe['type'] == t, 'log_weighted_score'].values[0]
-            else:
-                restaurant_score += dataframe.loc[dataframe['type'] == 'default', 'log_weighted_score'].values[0]
+            restaurant_score += default_dict[t]
         restaurants_collection.update_one({'_id': rest['_id']}, {'$set': {'Score': restaurant_score}})
 
 
@@ -109,7 +89,7 @@ def get_nearby_restaurants(location, type_df, point_location):
     data = []
     seen_ids = set()
     average_score = type_df['score'].mean()
-    limited_rec = 3 * np.log(average_score)
+    limited_rec = 3*np.log(average_score)
     new_query = restaurants_collection.find({'Location': {'$regex': location, '$options': 'i'},
                                              'Reviews': {'$gte': 4},
                                              'Score': {'$gte': limited_rec}})
@@ -122,7 +102,7 @@ def get_nearby_restaurants(location, type_df, point_location):
         {'coordinates':
              {'$near':
                   {'$geometry': point_location,
-                   '$maxDistance': 5000  # max distance in meters
+                   '$maxDistance': 3000  # max distance in meters
                    }
               }
          }
@@ -133,10 +113,4 @@ def get_nearby_restaurants(location, type_df, point_location):
             seen_ids.add(str(restaurant["_id"]))
 
     sorted_data = sorted(data, key = lambda x: x['Score'], reverse = True)
-    print(sorted_data)
-
-
-recommend_restaurant('Ava Smith', 'NY', 'Poughkeepsie', 'South Rd Ste C')
-
-
-
+    return sorted_data
