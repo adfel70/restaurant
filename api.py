@@ -77,8 +77,6 @@ async def delete_restaurant(restaurant_name: str, address: Optional[str] = None)
 
 @app.get("/restaurant/recommendation/{full_name}/{state}/{city}")
 async def recommend_restaurant(full_name: str, state: str, city: str, street: Optional[str] = None):
-    location = get_location(street, city, state)
-    my_point_location = get_geo_coordinates(location)
     persons_visited_restaurants = get_visited_restaurants(full_name)
 
     if persons_visited_restaurants.empty:
@@ -87,6 +85,8 @@ async def recommend_restaurant(full_name: str, state: str, city: str, street: Op
     types_scores_df = get_visited_types_df(persons_visited_restaurants)
     weighted_df = weighted_scores_df(types_scores_df)
     set_scored_restaurants(f"{city}, {state}", weighted_df)
+    location = get_location(street, city, state)
+    my_point_location = get_geo_coordinates(location)
     nearby_restaurants = get_nearby_restaurants(f"{city}, {state}", persons_visited_restaurants, my_point_location)
 
     for restaurant in nearby_restaurants:
