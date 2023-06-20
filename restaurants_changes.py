@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from pymongo import MongoClient
 
-client = MongoClient("mongodb://localhost:27017/")
+client = MongoClient("mongodb://host.docker.internal:27017/")
 db = client["project1"]
 restaurants_collection = db["Restaurants"]
 people_collection = db["people"]

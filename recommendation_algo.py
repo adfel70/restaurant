@@ -1,22 +1,42 @@
-from pymongo import MongoClient
 import os
-from geopy import Bing
-from dotenv import load_dotenv
-import pandas as pd
-import numpy as np
 from collections import defaultdict
 
-client = MongoClient("mongodb://localhost:27017/")
+import numpy as np
+import pandas as pd
+# from dotenv import load_dotenv
+from geopy import Bing
+from pymongo import MongoClient
+
+client = MongoClient("mongodb://host.docker.internal:27017/")
 db = client["project1"]
 restaurants_collection = db["Restaurants"]
 people_collection = db["people"]
 restaurants_collection.create_index([("coordinates", "2dsphere")])
 
-
-load_dotenv()  # take environment variables from .env.
+# load_dotenv()  # take environment variables from .env.
 API_KEY = os.getenv('BING_API_KEY')
 geolocator = Bing(api_key = 'AhpwrCFQAHjj_6XelmahpGUxECXe1tonsrdoV2zAc9VJETqAj-6ekcmoMaKv5Ri6', timeout = 10)
 
+
+# class RecomService:
+#     def __init__(self, api_key):
+#         client = MongoClient("mongodb://localhost:27017/")
+#         db = client["project1"]
+#         self.restaurants_collection = db["Restaurants"]
+#         self.people_collection = db["people"]
+#         restaurants_collection.create_index([("coordinates", "2dsphere")])
+#
+#         API_KEY = os.getenv('BING_API_KEY')
+#         self.geolocator = Bing(api_key = api_key,
+#                                timeout = 10)
+#
+#     def get_geo_coordinates(self, location):
+#         coordinates = self.geolocator.geocode(location)
+#         return {'type': 'Point', 'coordinates': [coordinates.longitude, coordinates.latitude]}
+#
+#
+# recom_service = RecomService(api_key = 'AhpwrCFQAHjj_6XelmahpGUxECXe1tonsrdoV2zAc9VJETqAj-6ekcmoMaKv5Ri6')
+# recom_service.get_geo_coordinates('ny')
 
 def get_location(street, city, state):
     if street is None:
@@ -64,13 +84,13 @@ def weighted_scores_df(type_df):
     grouped['num_times'] = grouped['num_times'].astype(int)
     average_score = type_df['score'].mean()
     new_row = pd.DataFrame({'type': ['default'], 'new_score': [average_score], 'num_times': [1]})
-    grouped = pd.concat([grouped, new_row], ignore_index=True)
+    grouped = pd.concat([grouped, new_row], ignore_index = True)
     grouped['weighted_score'] = grouped['new_score'] * grouped['num_times']
     grouped['log_weighted_score'] = np.log(grouped['weighted_score'])
     return grouped
 
 
-def set_scored_restaurants(location, dataframe): # todo default dict
+def set_scored_restaurants(location, dataframe):  # todo default dict
     default_dict = defaultdict(
         lambda: dataframe.loc[dataframe['type'] == 'default', 'log_weighted_score'].values[0],
         {row.type: row.log_weighted_score for row in dataframe.itertuples()}
@@ -89,7 +109,7 @@ def get_nearby_restaurants(location, type_df, point_location):
     data = []
     seen_ids = set()
     average_score = type_df['score'].mean()
-    limited_rec = 3*np.log(average_score)
+    limited_rec = 3 * np.log(average_score)
     new_query = restaurants_collection.find({'Location': {'$regex': location, '$options': 'i'},
                                              'Reviews': {'$gte': 4},
                                              'Score': {'$gte': limited_rec}})
